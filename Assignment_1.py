@@ -1,3 +1,15 @@
+"""
+Usage:
+    python Assignment_1.py --input genome.fa --design design.txt --markers markers.tab --output Output.fa
+
+Description:
+    This program constructs a synthetic plasmid for a given bacterial genome.
+    It detects the origin of replication (ORI), removes unwanted restriction sites,
+    inserts user-specified restriction sites and marker genes, and adds neutral
+    AT-rich spacers to prevent overlap.
+"""
+
+
 import argparse
 import random
 from collections import defaultdict
@@ -23,7 +35,7 @@ def write_fasta(filename, seq):
 
 
 # =====================================
-# ORI Detection (Frequent k-mers + AT bias)
+# ORI Detection
 # =====================================
 
 def find_ori(genome, k=9, window=500):
@@ -39,8 +51,7 @@ def find_ori(genome, k=9, window=500):
 
         max_repeat = max(freq.values())
         at_content = (region.count("A") + region.count("T")) / len(region)
-
-        score = max_repeat + at_content * 10  # AT bias
+        score = max_repeat + at_content * 10
 
         if score > best_score:
             best_score = score
@@ -50,39 +61,62 @@ def find_ori(genome, k=9, window=500):
 
 
 # =====================================
-# Spacer DNA (Neutral Linker)
+# Neutral Spacer
 # =====================================
 
 def generate_spacer(length=40):
-    return "".join(random.choice(["A", "T"]) for _ in range(length))
+    return "".join(random.choice("AT") for _ in range(length))
 
 
 # =====================================
-# Markers & Design Parsing
+# Marker & Design Parsing
 # =====================================
 
 def read_markers(filename):
     markers = {}
     with open(filename) as f:
         for line in f:
-            if line.strip():
-                name, seq = line.strip().split("\t")
-                markers[name] = seq.upper()
+            line = line.strip()
+
+            if not line:
+                continue  # skip empty lines
+
+            if "\t" not in line:
+                continue  # skip invalid marker lines
+
+            name, seq = line.split("\t")
+            markers[name.strip()] = seq.strip().upper()
+
     return markers
 
 
+
 def read_design(filename):
-    design = []
+    """
+    Returns:
+    - allowed_restrictions: set of enzyme names
+    - required_markers: set of marker names
+    """
+    allowed_restrictions = set()
+    required_markers = set()
+
     with open(filename) as f:
         for line in f:
             if line.strip():
                 part, name = line.strip().split(",")
-                design.append(name.strip())
-    return design
+                part = part.strip().lower()
+                name = name.strip()
+
+                if "site" in part:
+                    allowed_restrictions.add(name)
+                else:
+                    required_markers.add(name)
+
+    return allowed_restrictions, required_markers
 
 
 # =====================================
-# Restriction Sites
+# Restriction Sites Dictionary
 # =====================================
 
 RESTRICTION_SITES = {
@@ -91,7 +125,9 @@ RESTRICTION_SITES = {
     "HindIII": "AAGCTT",
     "PstI": "CTGCAG",
     "XbaI": "TCTAGA",
-    "KpnI": "GGTACC"
+    "KpnI": "GGTACC",
+    "SacI": "GAGCTC",
+    "SmaI": "CCCGGG"
 }
 
 
@@ -99,35 +135,36 @@ RESTRICTION_SITES = {
 # Plasmid Construction
 # =====================================
 
-def build_plasmid(genome, design, markers):
-    plasmid = ""
+def build_plasmid(genome, ori, allowed_sites, markers, required_markers):
 
-    # 1. ORI
-    ori = find_ori(genome)
-    plasmid += ori
+    # 1️⃣ Remove unwanted restriction sites from genome
+    for enzyme, site in RESTRICTION_SITES.items():
+        if enzyme not in allowed_sites:
+            genome = genome.replace(site, "")
 
-    # 2. Spacer
-    plasmid += generate_spacer()
+    plasmid = ori + generate_spacer()
 
-    # 3. Restriction Sites Block
-    for item in design:
-        if item in RESTRICTION_SITES:
-            plasmid += RESTRICTION_SITES[item]
+    # 2️⃣ Add allowed restriction sites
+    for enzyme in allowed_sites:
+        if enzyme in RESTRICTION_SITES:
+            plasmid += RESTRICTION_SITES[enzyme]
             plasmid += generate_spacer(10)
 
     plasmid += generate_spacer()
 
-    # 4. Marker Genes
-    for item in design:
-        if item in markers:
-            plasmid += markers[item]
+    # 3️⃣ Add marker genes
+    for marker in required_markers:
+        if marker in markers:
+            plasmid += markers[marker]
             plasmid += generate_spacer(20)
+        else:
+            print(f"⚠ Marker '{marker}' not found — skipped")
 
     return plasmid
 
 
 # =====================================
-# Validation Checks
+# Validation
 # =====================================
 
 def validate_plasmid(plasmid, ori):
@@ -150,11 +187,11 @@ def main():
     args = parser.parse_args()
 
     genome = read_fasta(args.input)
-    design = read_design(args.design)
     markers = read_markers(args.markers)
+    allowed_sites, required_markers = read_design(args.design)
 
     ori = find_ori(genome)
-    plasmid = build_plasmid(genome, design, markers)
+    plasmid = build_plasmid(genome, ori, allowed_sites, markers, required_markers)
 
     validate_plasmid(plasmid, ori)
     write_fasta(args.output, plasmid)
@@ -165,3 +202,13 @@ def main():
 
 if __name__ == "__main__":
     main()
+"""
+Usage:
+    python Assignment_1.py --input genome.fa --design design.txt --markers markers.tab --output Output.fa
+
+Description:
+    This program constructs a synthetic plasmid for a given bacterial genome.
+    It detects the origin of replication (ORI), removes unwanted restriction sites,
+    inserts user-specified restriction sites and marker genes, and adds neutral
+    AT-rich spacers to prevent overlap.
+"""
